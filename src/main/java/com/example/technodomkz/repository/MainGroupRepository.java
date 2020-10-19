@@ -1,6 +1,6 @@
 package com.example.technodomkz.repository;
 
-import com.example.fora.model.MainGroup;
+import com.example.technodomkz.model.MainGroup;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

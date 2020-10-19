@@ -8,5 +8,5 @@ import java.util.Optional;
 
 @Repository
 public interface SectionRepository extends JpaRepository<Section, Integer> {
-    Optional<Section> findOneByUrl(String url);
+    Optional<Section> findOneByName(String name);
 }
