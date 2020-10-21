@@ -37,8 +37,10 @@ import java.util.concurrent.Executors;
 public class SectionParser {
     private static final Logger LOG = LoggerFactory.getLogger(SectionParser.class);
 
-    private static final Set<String> SECTIONS = Set.of("Ноутбуки, компьютеры", "Комплектующие", "Оргтехника", "Смартфоны, планшеты",
-            "Телевизоры, аудио, видео", "Техника для дома", "Техника для кухни", "Фото и видео");
+    private static final Set<String> SECTIONS = Set.of(
+            "Смартфоны и гаджеты","Ноутбуки и компьютеры","Всё для геймеров",
+                    "Фототехника и квадрокоптеры","Бытовая техника","Техника для кухни",
+                    "ТВ, аудио, видео");
 
     private static final String URL = "https://technodom.kz/";
     private static final String CATEGORIES_URL = URL + "all";
@@ -90,7 +92,7 @@ public class SectionParser {
 
     @Scheduled(fixedDelay = ONE_WEEK_MS)
     @Transactional
-    public void getSections() throws IOException {
+    public void getSections() {
 
         driver.get(CATEGORIES_URL);
         Document document = Jsoup.parse(driver.getPageSource());
@@ -99,20 +101,30 @@ public class SectionParser {
         for (Element sectionElement : sectionElements) {
             Element sectionTitle = sectionElement.selectFirst("h2.CatalogPage-CategoryTitle");
             String sectionName = sectionTitle.text();
-            LOG.info("Секция: {}", sectionName);
-            Section section = sectionRepository.findOneByName(sectionName)
-                    .orElseGet(() -> sectionRepository.save(new Section(sectionName, null)));
-            Elements groupElements = sectionElement.select("div.CatalogPage-Category");
-            for (Element groupElement : groupElements) {
-                Element groupLink = groupElement.selectFirst("h3.CatalogPage-SubcategoryTitle > a");
-                LOG.info("\tГруппа: {}", groupLink.text());
-                Elements categoryLinks = groupElement.select("li.CatalogPage-Subcategory > a");
-                for (Element categoryLink : categoryLinks) {
-                    LOG.info("\t\tКатегория: {}", categoryLink.text());
+            if (SECTIONS.contains(sectionName)) {
+                LOG.info("Секция: {}", sectionName);
+                Section section = sectionRepository.findOneByName(sectionName)
+                        .orElseGet(() -> sectionRepository.save(new Section(sectionName, null)));
+                Elements groupElements = sectionElement.select("div.CatalogPage-Category");
+                for (Element groupElement : groupElements) {
+                    String groupLink = groupElement.selectFirst("h3.CatalogPage-SubcategoryTitle > a").attr("href");
+                    String groupTitle = groupElement.selectFirst("h3.CatalogPage-SubcategoryTitle > a").text();
+                    LOG.info("\tГруппа: {}", groupTitle);
+                    MainGroup group = mainGroupRepository.findOneByUrl(groupLink)
+                            .orElseGet(() -> mainGroupRepository.save(new MainGroup(groupTitle, groupLink, section)));
+                    Elements categoryLinks = groupElement.select("li.CatalogPage-Subcategory > a");
+                    for (Element categoryLink : categoryLinks) {
+                        LOG.info("\t\tКатегория: {}", categoryLink.text());
+                        String categoryText = categoryLink.text();
+                        String categoryUrl = categoryLink.absUrl("href");
+                        if (!categoryRepository.existsByUrl(categoryUrl)) {
+                            categoryRepository.save(new Category(categoryText, categoryUrl, group));
+                        }
+                    }
                 }
             }
+            parseCities(driver);
         }
-        parseCities(driver);
     }
 
     private void parseCities(WebDriver driver) {
@@ -136,12 +148,12 @@ public class SectionParser {
         Elements cityUrls = pageWithCitiesModal.select("a.CitiesModal__List-Item");
         for (Element cityUrl : cityUrls) {
             LOG.info("Город: {}", cityUrl.text());
+            String cityLink = cityUrl.absUrl("href");
+            String cityText = cityUrl.text();
+            if (!cityRepository.existsByUrlSuffix(cityLink)) {
+                cityRepository.save(new City(cityText,cityLink));
+            }
         }
-//        CitiesModal__List-Item
-//            if (!cityRepository.existsByUrlSuffix(citySuffix)) {
-//                cityRepository.save(new City(cityName, citySuffix));
-//            }
-
     }
 
 
@@ -150,7 +162,7 @@ public class SectionParser {
 //    @Transactional
     public void getAdditionalArticleInfo() throws InterruptedException, IOException {
         LOG.info("Получаем дополнитульную информацию о товарe...");
-        ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
+     int page=0;
 
         List<Category> categories;
 
@@ -158,7 +170,7 @@ public class SectionParser {
         // 2. page + pageSize
         //   offset = page * pageSize;  limit = pageSize;
         List<City> cities = cityRepository.findAll();
-//        categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize)
+        categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize));
         Map<String, String> cookies = new HashMap<>();
         for (int i = 0; i < cities.size(); i++) {
             LOG.info("-------------------------------------");
@@ -170,7 +182,7 @@ public class SectionParser {
                     .method(Connection.Method.GET)
                     .execute();
             cookies.putAll(response.cookies());
-            int page = 0;
+       page = 0;
             while (!(categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize))).isEmpty()) {
                 LOG.info("Получили из базы {} категорий", categories.size());
                 CountDownLatch latch = new CountDownLatch(categories.size());
@@ -181,7 +193,7 @@ public class SectionParser {
                             cities.get(i),
                             cookies,
                             latch)
-                            
+
                             .run();
 
                 }
@@ -192,7 +204,7 @@ public class SectionParser {
 
             }
         }
-        executorService.shutdown();
+
     }
 }
 

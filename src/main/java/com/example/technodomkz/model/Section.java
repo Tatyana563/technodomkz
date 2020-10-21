@@ -9,8 +9,9 @@ public class Section {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
-
+    @Column(columnDefinition = "text")
     private String name;
+    @Column(columnDefinition = "text")
     private String url;
 
     @OneToMany(mappedBy = "section")

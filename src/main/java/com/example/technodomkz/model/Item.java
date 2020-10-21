@@ -9,13 +9,15 @@ public class Item {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @Column(nullable = false)
+    @Column(nullable = false,columnDefinition = "text")
     private String model;
+    @Column(columnDefinition = "text")
     private String code;
     @Column(nullable = false)
     private String externalId;
+    @Column(columnDefinition = "text")
     private String image;
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "text")
     private String url;
     @Column(columnDefinition = "text")
     private String description;

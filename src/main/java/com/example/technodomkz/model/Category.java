@@ -9,7 +9,9 @@ public class Category {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
+    @Column(columnDefinition = "text")
     private String name;
+    @Column(columnDefinition = "text")
     private String url;
     @ManyToOne
     private MainGroup group;

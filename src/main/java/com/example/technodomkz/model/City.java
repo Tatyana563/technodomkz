@@ -8,7 +8,9 @@ public class City {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
+    @Column(columnDefinition = "text")
     private String name;
+    @Column(columnDefinition = "text")
     private String urlSuffix;
 
     public City() {
