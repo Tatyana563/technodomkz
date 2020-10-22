@@ -12,11 +12,14 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import org.openqa.selenium.By;
+import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,105 +27,60 @@ import java.util.regex.Pattern;
 
 public class ItemsUpdateTask implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ItemsUpdateTask.class);
-    private static final String PAGE_URL_FORMAT = "?sort=views&page=%d";
-    private static final Integer NUMBER_OF_PRODUCTS_PER_PAGE = 18;
     private static final Pattern PATTERN = Pattern.compile("Артикул:\\s*(\\S*)");
     private static final Pattern PRICE_PATTERN = Pattern.compile("(^([0-9]+\\s*)*)");
     private static final Pattern QUANTITY_PATTERN = Pattern.compile("(\\d+)");
-    private static final int ONE_MINUTE_MS = 60 * 1000;
 
     private final ItemRepository itemRepository;
     private final ItemPriceRepository itemPriceRepository;
     private final Category category;
     private final City city;
-    private final Map<String, String> cookies;
-    private final CountDownLatch latch;
+    private final WebDriver webDriver;
 
-    public ItemsUpdateTask(ItemRepository itemRepository, ItemPriceRepository itemPriceRepository, Category category, City city, Map<String, String> cookies, CountDownLatch latch) {
+    public ItemsUpdateTask(ItemRepository itemRepository, ItemPriceRepository itemPriceRepository, Category category, City city, WebDriver webDriver) {
         this.itemRepository = itemRepository;
         this.itemPriceRepository = itemPriceRepository;
         this.category = category;
         this.city = city;
-        this.cookies = cookies;
-        this.latch = latch;
+        this.webDriver = webDriver;
     }
 
     @Override
     public void run() {
         try {
             LOG.warn("Начиначем обработку категории '{}'", category.getName());
-            String pageUrlFormat = category.getUrl() + PAGE_URL_FORMAT;
-            String firstPageUrl = String.format(pageUrlFormat, 1);
-            Connection.Response result = null;
-            synchronized (cookies) {
-                result = Jsoup.connect(firstPageUrl)
-                        .cookies(cookies)
-                        .timeout(ONE_MINUTE_MS)
-                        .execute();
-                cookies.putAll(result.cookies());
+            synchronized (webDriver) {
+                //TODO: make url pattern with city.
+                webDriver.get(category.getUrl());
             }
 
-            Document firstPage = result.parse();
-            if (firstPage != null) {
-                int totalPages = getTotalPages(firstPage);
-                parseItems(firstPage);
-                for (int pageNumber = 2; pageNumber <= totalPages; pageNumber++) {
-                    LOG.info("Получаем список товаров ({}) - страница {}", category.getName(), pageNumber);
-                    synchronized (cookies) {
-                        result = Jsoup.connect(String.format(pageUrlFormat, pageNumber)).cookies(cookies).timeout(ONE_MINUTE_MS).execute();
-                        cookies.putAll(result.cookies());
-                    }
-                    parseItems(result.parse());
-
+            WebElement nextPageLink = null;
+            do {
+                if(nextPageLink != null) {
+                    nextPageLink.click();
                 }
-            }
-
-        } catch (IOException ioException) {
-            LOG.error("Не получилось распарсить категорию", ioException);
+                Document itemsPage = Jsoup.parse(webDriver.getPageSource());
+                parseItems(itemsPage);
+            } while ((nextPageLink = webDriver.findElement(By.cssSelector(".CategoryPagination-ListItem .CategoryPagination-Arrow_direction_next"))).isDisplayed());
+        } catch (NoSuchElementException noSuchElementException) {
+            // nothing to do.
         } finally {
             LOG.warn("Обработка категории '{}' завершена", category.getName());
-            latch.countDown();
         }
     }
-
-    private int getTotalPages(Document firstPage) {
-        Element itemElement = firstPage.selectFirst(".catalog-container");
-        if (itemElement != null) {
-            int numberOfPages = 0;
-
-            String quantity = itemElement.select(".product-quantity").text();
-            Integer amountOfProducts;
-            Matcher matcher = QUANTITY_PATTERN.matcher(quantity);
-            if (matcher.find()) {
-                amountOfProducts = Integer.valueOf(matcher.group(1));
-
-                int main = amountOfProducts / NUMBER_OF_PRODUCTS_PER_PAGE;
-                if (main != 0) {
-                    if ((amountOfProducts % NUMBER_OF_PRODUCTS_PER_PAGE != 0)) {
-                        numberOfPages = main + 1;
-                    } else {
-                        numberOfPages = main;
-                    }
-                } else {
-                    numberOfPages = 1;
-                }
-            }
-            return numberOfPages;
-        } else return 0;
-    }
-
 
     private void parseItems(Document itemsPage) {
         if (!isValidCity(itemsPage)) {
-            LOG.error("Используется другой город {}", itemsPage.selectFirst("a.current-city").text());
+            String text = itemsPage.selectFirst("p.CitySelector__Title").text();
+            LOG.error("Используется другой город {}", text);
             return;
         }
 
-        Elements itemElements = itemsPage.select(".catalog-list-item:not(.injectable-banner)");
+        Elements itemElements = itemsPage.select("li.ProductCard");
 
         for (Element itemElement : itemElements) {
             try {
-                parseSingleItem(itemElement);
+//                parseSingleItem(itemElement);
             } catch (Exception e) {
                 LOG.error("Не удалось распарсить продукт", e);
             }
@@ -131,7 +89,7 @@ public class ItemsUpdateTask implements Runnable {
     }
 
     private boolean isValidCity(Document page) {
-        return city.getName().equalsIgnoreCase(page.selectFirst("a.current-city").text());
+        return city.getName().equalsIgnoreCase(page.selectFirst("p.CitySelector__Title").text());
     }
 
     private void parseSingleItem(Element itemElement) {

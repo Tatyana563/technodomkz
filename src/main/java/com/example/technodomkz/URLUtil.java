@@ -18,5 +18,15 @@ public final class URLUtil {
         return rawUrl.substring(index1+1,index2);
     }
 
+    public static String extractCityFromUrl(String rawUri, String suffix) {
+        // rawUri = "/aktobe/all"
+        // suffix = "/all"
+        if(!rawUri.equals(suffix) && rawUri.endsWith(suffix)) {
+            int start = rawUri.startsWith("/") ? 1 : 0;
+            return rawUri.substring(start, rawUri.length() - suffix.length());
+        }
+       return "";
+    }
+
 }
 

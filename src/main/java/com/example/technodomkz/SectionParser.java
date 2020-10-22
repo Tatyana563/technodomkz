@@ -6,12 +6,12 @@ import com.example.technodomkz.model.MainGroup;
 import com.example.technodomkz.model.Section;
 import com.example.technodomkz.repository.*;
 import io.github.bonigarcia.wdm.WebDriverManager;
-import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.openqa.selenium.By;
+import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
@@ -28,22 +28,21 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.List;
+import java.util.Set;
 
 @Component
 public class SectionParser {
     private static final Logger LOG = LoggerFactory.getLogger(SectionParser.class);
 
     private static final Set<String> SECTIONS = Set.of(
-            "Смартфоны и гаджеты","Ноутбуки и компьютеры","Всё для геймеров",
-                    "Фототехника и квадрокоптеры","Бытовая техника","Техника для кухни",
-                    "ТВ, аудио, видео");
+            "Смартфоны и гаджеты", "Ноутбуки и компьютеры", "Всё для геймеров",
+            "Фототехника и квадрокоптеры", "Бытовая техника", "Техника для кухни",
+            "ТВ, аудио, видео");
 
-    private static final String URL = "https://technodom.kz/";
-    private static final String CATEGORIES_URL = URL + "all";
+    private static final String URL = "https://technodom.kz";
+    private static final String ALL_SUFFIX = "/all";
+    private static final String CATEGORIES_URL = URL + ALL_SUFFIX;
 
     private static final long ONE_SECOND_MS = 1000L;
     private static final long ONE_MINUTE_MS = 60 * ONE_SECOND_MS;
@@ -84,7 +83,7 @@ public class SectionParser {
 
     @PreDestroy
     public void destroy() {
-        if(driver != null) {
+        if (driver != null) {
             driver.quit();
         }
     }
@@ -95,6 +94,7 @@ public class SectionParser {
     public void getSections() {
 
         driver.get(CATEGORIES_URL);
+        long loaded = System.currentTimeMillis();
         Document document = Jsoup.parse(driver.getPageSource());
         LOG.info("Получили главную страницу, ищем секции...");
         Elements sectionElements = document.select("div.CatalogPage-CategorySection");
@@ -123,88 +123,129 @@ public class SectionParser {
                     }
                 }
             }
-            parseCities(driver);
         }
+        parseCities(loaded);
     }
 
-    private void parseCities(WebDriver driver) {
-        WebElement citySelectModal = driver.findElement(By.cssSelector(".ReactModal__Content.VerifyCityModal"));
-        if (citySelectModal.isDisplayed())
-        {
-            List<WebElement> buttons = citySelectModal.findElements(By.cssSelector(".ButtonNext__Text.ButtonNext__Text_Size-L"));
-            for (WebElement button : buttons) {
-                if ("да".equalsIgnoreCase(button.getText())) {
-                    button.click();
-                    break;
+    private void parseCities(long loaded) {
+        checkForModalPanels(loaded);
+        try {
+            WebElement citySelectModal = driver.findElement(By.cssSelector(".ReactModal__Content.VerifyCityModal"));
+            if (citySelectModal.isDisplayed()) {
+                List<WebElement> buttons = citySelectModal.findElements(By.cssSelector(".ButtonNext__Text.ButtonNext__Text_Size-L"));
+                for (WebElement button : buttons) {
+                    if ("да".equalsIgnoreCase(button.getText())) {
+                        button.click();
+                        break;
+                    }
                 }
             }
+        } catch (NoSuchElementException noSuchElementException) {
+            // nothing to do.
         }
 
-        driver.findElement(By.cssSelector(".CitySelector__Button")).click();
-        driver.findElement(By.cssSelector(".CitiesModal__More-Btn")).click();
-
+        openCitiesPopup();
 
         Document pageWithCitiesModal = Jsoup.parse(driver.getPageSource());
         Elements cityUrls = pageWithCitiesModal.select("a.CitiesModal__List-Item");
         for (Element cityUrl : cityUrls) {
             LOG.info("Город: {}", cityUrl.text());
-            String cityLink = cityUrl.absUrl("href");
+            String cityLink = cityUrl.attr("href");
+            //TODO: extract city uri
             String cityText = cityUrl.text();
             if (!cityRepository.existsByUrlSuffix(cityLink)) {
-                cityRepository.save(new City(cityText,cityLink));
+                cityRepository.save(new City(cityText, cityLink));
             }
+        }
+
+        closeCitiesPopup();
+    }
+
+    private void checkForModalPanels(long loaded) {
+        long now = System.currentTimeMillis();
+        long past = now - loaded;
+        long left = 20L * 1000L - past;
+        try {
+            LOG.info("Ожидаем возможные модальные окна {} мс...", left);
+            Thread.sleep(left);
+            LOG.info("Дождались");
+            WebElement element;
+            while ((element = driver.findElement(
+                    By.cssSelector("div[id$='-popup-modal'] [id$='-popup-close']"))).isDisplayed()) {
+                element.click();
+                Thread.sleep(1000L);
+            }
+        } catch (NoSuchElementException noSuchElementException) {
+            // nothing to do.
+        } catch (Exception e) {
+            LOG.error("Проблема определения оодальыых окон", e);
         }
     }
 
 
-
-//    @Scheduled(initialDelay = 1200, fixedDelay = ONE_WEEK_MS)
-//    @Transactional
+    @Scheduled(initialDelay = 1200, fixedDelay = ONE_WEEK_MS)
+    @Transactional
     public void getAdditionalArticleInfo() throws InterruptedException, IOException {
         LOG.info("Получаем дополнитульную информацию о товарe...");
-     int page=0;
+        int page = 0;
 
-        List<Category> categories;
-
-        // 1. offset + limit
-        // 2. page + pageSize
-        //   offset = page * pageSize;  limit = pageSize;
+        List<Category> categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize));
         List<City> cities = cityRepository.findAll();
-        categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize));
-        Map<String, String> cookies = new HashMap<>();
         for (int i = 0; i < cities.size(); i++) {
+            City city = cities.get(i);
+            switchCity(city);
             LOG.info("-------------------------------------");
-            LOG.info("Получаем списки товаров для {}", cities.get(i).getUrlSuffix());
+            LOG.info("Получаем списки товаров для {}", city.getUrlSuffix());
             LOG.info("-------------------------------------");
-            String urlWithCity = URL + cities.get(i).getUrlSuffix();
-            Connection.Response response = Jsoup.connect(urlWithCity)
-                    .cookies(cookies)
-                    .method(Connection.Method.GET)
-                    .execute();
-            cookies.putAll(response.cookies());
-       page = 0;
+            page = 0;
             while (!(categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize))).isEmpty()) {
                 LOG.info("Получили из базы {} категорий", categories.size());
-                CountDownLatch latch = new CountDownLatch(categories.size());
                 for (Category category : categories) {
                     new ItemsUpdateTask(itemRepository,
                             itemPriceRepository,
                             category,
-                            cities.get(i),
-                            cookies,
-                            latch)
+                            city,
+                            driver)
 
                             .run();
 
                 }
-
-                LOG.info("Задачи запущены, ожидаем завершения выполнения...");
-                latch.await();
                 LOG.info("Задачи выполнены, следующая порция...");
 
             }
         }
 
+    }
+
+//    private void modalSafeClick(WebElement element) {
+//
+//        while (!element.isDisplayed()) {
+//            checkForModalPanels();
+//        }
+//        element.click();
+//    }
+
+    private void switchCity(City city) {
+        openCitiesPopup();
+        List<WebElement> cityLinks = driver.findElements(By.cssSelector("a.CitiesModal__List-Item"));
+        for (WebElement cityLink : cityLinks) {
+            if(city.getName().equalsIgnoreCase(cityLink.getText())) {
+                cityLink.click();
+                break;
+            }
+        }
+    }
+
+    private void openCitiesPopup() {
+//        modalSafeClick(driver.findElement(By.cssSelector(".CitySelector__Button")));
+//        modalSafeClick(driver.findElement(By.cssSelector(".CitiesModal__More-Btn")));
+
+        driver.findElement(By.cssSelector(".CitySelector__Button")).click();
+        driver.findElement(By.cssSelector(".CitiesModal__More-Btn")).click();
+    }
+
+    private void closeCitiesPopup() {
+        driver.findElement(By.cssSelector(".ReactModal__Content.CitiesModal .ModalNext__CloseBtn")).click();
     }
 }
 
