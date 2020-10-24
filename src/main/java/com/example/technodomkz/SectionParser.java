@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.IOException;
+import java.net.URL;
 import java.util.List;
 import java.util.Set;
 
@@ -39,10 +40,6 @@ public class SectionParser {
             "Смартфоны и гаджеты", "Ноутбуки и компьютеры", "Всё для геймеров",
             "Фототехника и квадрокоптеры", "Бытовая техника", "Техника для кухни",
             "ТВ, аудио, видео");
-
-    private static final String URL = "https://technodom.kz";
-    private static final String ALL_SUFFIX = "/all";
-    private static final String CATEGORIES_URL = URL + ALL_SUFFIX;
 
     private static final long ONE_SECOND_MS = 1000L;
     private static final long ONE_MINUTE_MS = 60 * ONE_SECOND_MS;
@@ -93,7 +90,7 @@ public class SectionParser {
     @Transactional
     public void getSections() {
 
-        driver.get(CATEGORIES_URL);
+        driver.get(Constants.CATEGORIES_URL);
         long loaded = System.currentTimeMillis();
         Document document = Jsoup.parse(driver.getPageSource());
         LOG.info("Получили главную страницу, ищем секции...");
@@ -150,8 +147,7 @@ public class SectionParser {
         Elements cityUrls = pageWithCitiesModal.select("a.CitiesModal__List-Item");
         for (Element cityUrl : cityUrls) {
             LOG.info("Город: {}", cityUrl.text());
-            String cityLink = cityUrl.attr("href");
-            //TODO: extract city uri
+            String cityLink = URLUtil.extractCityFromUrl(cityUrl.attr("href"), Constants.ALL_SUFFIX);;
             String cityText = cityUrl.text();
             if (!cityRepository.existsByUrlSuffix(cityLink)) {
                 cityRepository.save(new City(cityText, cityLink));
@@ -178,18 +174,18 @@ public class SectionParser {
         } catch (NoSuchElementException noSuchElementException) {
             // nothing to do.
         } catch (Exception e) {
-            LOG.error("Проблема определения оодальыых окон", e);
+            LOG.error("Проблема определения модальыых окон", e);
         }
     }
 
 
     @Scheduled(initialDelay = 1200, fixedDelay = ONE_WEEK_MS)
     @Transactional
-    public void getAdditionalArticleInfo() throws InterruptedException, IOException {
+    public void getAdditionalArticleInfo(){
         LOG.info("Получаем дополнитульную информацию о товарe...");
         int page = 0;
 
-        List<Category> categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize));
+        List<Category> categories;
         List<City> cities = cityRepository.findAll();
         for (int i = 0; i < cities.size(); i++) {
             City city = cities.get(i);
@@ -206,7 +202,6 @@ public class SectionParser {
                             category,
                             city,
                             driver)
-
                             .run();
 
                 }
@@ -237,9 +232,6 @@ public class SectionParser {
     }
 
     private void openCitiesPopup() {
-//        modalSafeClick(driver.findElement(By.cssSelector(".CitySelector__Button")));
-//        modalSafeClick(driver.findElement(By.cssSelector(".CitiesModal__More-Btn")));
-
         driver.findElement(By.cssSelector(".CitySelector__Button")).click();
         driver.findElement(By.cssSelector(".CitiesModal__More-Btn")).click();
     }

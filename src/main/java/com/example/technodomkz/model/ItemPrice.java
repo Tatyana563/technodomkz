@@ -17,6 +17,8 @@ public class ItemPrice {
 
     private Double price;
 
+    private boolean available;
+
     public int getId() {
         return id;
     }
@@ -47,6 +49,14 @@ public class ItemPrice {
 
     public void setPrice(Double price) {
         this.price = price;
+    }
+
+    public boolean isAvailable() {
+        return available;
+    }
+
+    public void setAvailable(boolean available) {
+        this.available = available;
     }
 
     // kiev ref 123

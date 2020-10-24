@@ -1,5 +1,7 @@
 package com.example.technodomkz;
 
+import java.net.URL;
+
 public final class URLUtil {
 
     private URLUtil() {
@@ -26,6 +28,11 @@ public final class URLUtil {
             return rawUri.substring(start, rawUri.length() - suffix.length());
         }
        return "";
+    }
+    public static String getCategorySuffix(String rawURL, String prefix) {
+        //  https://www.technodom.kz/smartfony-i-gadzhety/smartfony-i-telefony/smartfony
+        String fixedPrefix = prefix.endsWith("/") ? prefix : (prefix + "/");
+       return rawURL.replace(fixedPrefix, "");
     }
 
 }

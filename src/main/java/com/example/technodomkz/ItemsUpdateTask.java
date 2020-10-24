@@ -19,6 +19,7 @@ import org.openqa.selenium.WebElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.print.DocFlavor;
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
@@ -30,6 +31,9 @@ public class ItemsUpdateTask implements Runnable {
     private static final Pattern PATTERN = Pattern.compile("Артикул:\\s*(\\S*)");
     private static final Pattern PRICE_PATTERN = Pattern.compile("(^([0-9]+\\s*)*)");
     private static final Pattern QUANTITY_PATTERN = Pattern.compile("(\\d+)");
+    //TODO: export options to application.properties
+    private static final long PAGE_TIMEOUT = 7 * 1000L;
+    private static final int RETRIES_COUNT = 3;
 
     private final ItemRepository itemRepository;
     private final ItemPriceRepository itemPriceRepository;
@@ -50,19 +54,30 @@ public class ItemsUpdateTask implements Runnable {
         try {
             LOG.warn("Начиначем обработку категории '{}'", category.getName());
             synchronized (webDriver) {
-                //TODO: make url pattern with city.
-                webDriver.get(category.getUrl());
+                String categorySuffix = URLUtil.getCategorySuffix(category.getUrl(), Constants.URL);
+                String categoryUrl = String.format("%s/%s/%s", Constants.URL, city.getUrlSuffix(), categorySuffix);
+                webDriver.get(categoryUrl);
             }
 
             WebElement nextPageLink = null;
+            outer:
             do {
-                if(nextPageLink != null) {
+                if (nextPageLink != null) {
                     nextPageLink.click();
+                }
+                long start = System.currentTimeMillis();
+                while (!webDriver.findElements(By.cssSelector(".CategoryProductList .ProductCard.ProductCard_isLoading")).isEmpty()) {
+                    if (System.currentTimeMillis() - start >= PAGE_TIMEOUT) {
+                        LOG.warn("Слишком долго получаем данные");
+                        //TODO: retry to get data / reload page
+                        break outer;
+                    }
+                    Thread.sleep(200);
                 }
                 Document itemsPage = Jsoup.parse(webDriver.getPageSource());
                 parseItems(itemsPage);
             } while ((nextPageLink = webDriver.findElement(By.cssSelector(".CategoryPagination-ListItem .CategoryPagination-Arrow_direction_next"))).isDisplayed());
-        } catch (NoSuchElementException noSuchElementException) {
+        } catch (NoSuchElementException | InterruptedException noSuchElementException) {
             // nothing to do.
         } finally {
             LOG.warn("Обработка категории '{}' завершена", category.getName());
@@ -76,11 +91,11 @@ public class ItemsUpdateTask implements Runnable {
             return;
         }
 
-        Elements itemElements = itemsPage.select("li.ProductCard");
+        Elements itemElements = itemsPage.select(".CategoryProductList li.ProductCard");
 
         for (Element itemElement : itemElements) {
             try {
-//                parseSingleItem(itemElement);
+                parseSingleItem(itemElement);
             } catch (Exception e) {
                 LOG.error("Не удалось распарсить продукт", e);
             }
@@ -93,50 +108,52 @@ public class ItemsUpdateTask implements Runnable {
     }
 
     private void parseSingleItem(Element itemElement) {
-        String itemPhoto = itemElement.selectFirst(".image img").absUrl("src");
-        Element itemLink = itemElement.selectFirst(".item-info>a");
-        String itemUrl = itemLink.absUrl("href");
-        String itemText = itemLink.text();
+        String itemPhoto = itemElement.selectFirst(".ProductCard-Image img").absUrl("src");
+        String itemUrl = itemElement.selectFirst(".ProductCard-Content").attr("href");
+        String itemText = itemElement.selectFirst("h4").text();
+        String itemPrice = itemElement.selectFirst(".ProductPrice data[value]").attr("value");
 
-        String externalCode = URLUtil.extractExternalIdFromUrl(itemUrl);
-        if (externalCode != null && externalCode.isEmpty()) {
-            LOG.warn("Продукт без кода: {}\n{}", itemText, itemUrl);
-            return;
-        }
+        LOG.info("Продукт: {} {}", itemText, itemPrice);
+//        String externalCode = URLUtil.extractExternalIdFromUrl(itemUrl);
+//        if (externalCode != null && externalCode.isEmpty()) {
+//            LOG.warn("Продукт без кода: {}\n{}", itemText, itemUrl);
+//            return;
+//        }
+//
+//        Item item = itemRepository.findOneByExternalId(externalCode).orElseGet(() -> new Item(externalCode));
+//
+//        String itemDescription = itemElement.selectFirst(".list-unstyled").text();
+//        Matcher matcher = PATTERN.matcher(itemDescription);
+//        if (matcher.find()) {
+//            String itemCode = matcher.group(1);
+//            item.setCode(itemCode);
+//        }
+//
+//        item.setModel(itemText);
+//        item.setImage(itemPhoto);
+//        item.setDescription(itemDescription);
+//        String itemUrlWithoutCity = URLUtil.removeCityFromUrl(itemUrl);
+//        item.setUrl(itemUrlWithoutCity);
+//        item.setCategory(category);
+//        itemRepository.save(item);
+//
+//        String itemPriceString = itemElement.selectFirst(".price").text();
+//        Matcher priceMatcher = PRICE_PATTERN.matcher(itemPriceString);
+//        if (priceMatcher.find()) {
+//            String price = priceMatcher.group(0).replaceAll("\\s*", "");
+//
+//            ItemPrice itemPrice = itemPriceRepository.findOneByItemAndCity(item, city).orElseGet(() -> {
+//                ItemPrice newItemPrice = new ItemPrice();
+//                newItemPrice.setItem(item);
+//                newItemPrice.setCity(city);
+        //TODO: item availability
 
-        Item item = itemRepository.findOneByExternalId(externalCode).orElseGet(() -> new Item(externalCode));
-
-        String itemDescription = itemElement.selectFirst(".list-unstyled").text();
-        Matcher matcher = PATTERN.matcher(itemDescription);
-        if (matcher.find()) {
-            String itemCode = matcher.group(1);
-            item.setCode(itemCode);
-        }
-
-        item.setModel(itemText);
-        item.setImage(itemPhoto);
-        item.setDescription(itemDescription);
-        //TODO: remove city from url
-        String itemUrlWithoutCity = URLUtil.removeCityFromUrl(itemUrl);
-        item.setUrl(itemUrlWithoutCity);
-        item.setCategory(category);
-        itemRepository.save(item);
-
-        String itemPriceString = itemElement.selectFirst(".price").text();
-        Matcher priceMatcher = PRICE_PATTERN.matcher(itemPriceString);
-        if (priceMatcher.find()) {
-            String price = priceMatcher.group(0).replaceAll("\\s*", "");
-
-            ItemPrice itemPrice = itemPriceRepository.findOneByItemAndCity(item, city).orElseGet(() -> {
-                ItemPrice newItemPrice = new ItemPrice();
-                newItemPrice.setItem(item);
-                newItemPrice.setCity(city);
-                return newItemPrice;
-            });
-
-            itemPrice.setPrice(Double.valueOf(price));
-            itemPriceRepository.save(itemPrice);
-        }
+//                return newItemPrice;
+//            });
+//
+//            itemPrice.setPrice(Double.valueOf(price));
+//            itemPriceRepository.save(itemPrice);
+//        }
     }
 
 }
