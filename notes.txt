@@ -1,0 +1,7 @@
+1) how parse categories/sections without closing modelwindow?
+
+2)   @Value("${parser.initial.delay}")
+   //    private final Integer initialDelay;
+
+ 3) almatu urlSuffix empty in table
+ 4) app properties =null
