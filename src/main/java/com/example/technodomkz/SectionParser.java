@@ -73,7 +73,7 @@ public class SectionParser {
         WebDriverManager.chromedriver().setup();
         ChromeOptions options = new ChromeOptions();
         options.setBinary(path);
-//        options.addArguments("--headless");
+//       options.addArguments("--headless");
         options.addArguments("window-size=1920x1080");
         driver = new ChromeDriver(options);
     }
@@ -104,7 +104,7 @@ public class SectionParser {
                         .orElseGet(() -> sectionRepository.save(new Section(sectionName, null)));
                 Elements groupElements = sectionElement.select("div.CatalogPage-Category");
                 for (Element groupElement : groupElements) {
-                    String groupLink = groupElement.selectFirst("h3.CatalogPage-SubcategoryTitle > a").attr("href");
+                    String groupLink = groupElement.selectFirst("h3.CatalogPage-SubcategoryTitle > a").absUrl("href");
                     String groupTitle = groupElement.selectFirst("h3.CatalogPage-SubcategoryTitle > a").text();
                     LOG.info("\tГруппа: {}", groupTitle);
                     MainGroup group = mainGroupRepository.findOneByUrl(groupLink)
@@ -212,13 +212,6 @@ public class SectionParser {
 
     }
 
-//    private void modalSafeClick(WebElement element) {
-//
-//        while (!element.isDisplayed()) {
-//            checkForModalPanels();
-//        }
-//        element.click();
-//    }
 
     private void switchCity(City city) {
         openCitiesPopup();
