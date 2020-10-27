@@ -22,4 +22,10 @@ public class URLUtilTest {
         String result = URLUtil.getCategorySuffix(rawUri, Constants.URL);
         Assertions.assertEquals("smartfony-i-gadzhety/smartfony-i-telefony/smartfony", result, "Нужно получить последнюю часть ссылки");
     }
+    @Test
+    public void extractExternalIdFromCityUrl(){
+        String rawUrl= "https://www.technodom.kz/tv-audio-foto-video/televizory/led-televizory/p/samsung-43-ue43t5300auxce-led-fhd-smart-black-216516";
+        String externalId=URLUtil.extractExternalIdFromUrl(rawUrl);
+        Assertions.assertEquals(externalId,"216516");
+    }
 }

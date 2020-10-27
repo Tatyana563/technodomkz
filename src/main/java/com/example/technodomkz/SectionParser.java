@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 @Component
 public class SectionParser {
@@ -41,11 +42,6 @@ public class SectionParser {
             "Фототехника и квадрокоптеры", "Бытовая техника", "Техника для кухни",
             "ТВ, аудио, видео");
 
-    private static final long ONE_SECOND_MS = 1000L;
-    private static final long ONE_MINUTE_MS = 60 * ONE_SECOND_MS;
-    private static final long ONE_HOUR_MS = 60 * ONE_MINUTE_MS;
-    private static final long ONE_DAY_MS = 24 * ONE_HOUR_MS;
-    private static final long ONE_WEEK_MS = 7 * ONE_DAY_MS;
 
     @Value("${parser.chrome.path}")
     private String path;
@@ -53,6 +49,10 @@ public class SectionParser {
     private Integer chunkSize;
     @Value("${technodom.thread-pool.pool-size}")
     private Integer threadPoolSize;
+    @Value("${parser.model.window.timeout}")
+    private Integer modelTimeout;
+//    @Value("${parser.initial.delay}")
+//    private final Integer initialDelay;
     @Autowired
     private SectionRepository sectionRepository;
     @Autowired
@@ -73,9 +73,10 @@ public class SectionParser {
         WebDriverManager.chromedriver().setup();
         ChromeOptions options = new ChromeOptions();
         options.setBinary(path);
-//        options.addArguments("--headless");
+//       options.addArguments("--headless");
         options.addArguments("window-size=1920x1080");
         driver = new ChromeDriver(options);
+        driver.manage().timeouts().implicitlyWait(10, TimeUnit.SECONDS);
     }
 
     @PreDestroy
@@ -86,7 +87,7 @@ public class SectionParser {
     }
 
 
-    @Scheduled(fixedDelay = ONE_WEEK_MS)
+    @Scheduled(fixedDelay = Constants.ONE_SECOND_MS)
     @Transactional
     public void getSections() {
 
@@ -104,7 +105,7 @@ public class SectionParser {
                         .orElseGet(() -> sectionRepository.save(new Section(sectionName, null)));
                 Elements groupElements = sectionElement.select("div.CatalogPage-Category");
                 for (Element groupElement : groupElements) {
-                    String groupLink = groupElement.selectFirst("h3.CatalogPage-SubcategoryTitle > a").attr("href");
+                    String groupLink = groupElement.selectFirst("h3.CatalogPage-SubcategoryTitle > a").absUrl("href");
                     String groupTitle = groupElement.selectFirst("h3.CatalogPage-SubcategoryTitle > a").text();
                     LOG.info("\tГруппа: {}", groupTitle);
                     MainGroup group = mainGroupRepository.findOneByUrl(groupLink)
@@ -160,7 +161,7 @@ public class SectionParser {
     private void checkForModalPanels(long loaded) {
         long now = System.currentTimeMillis();
         long past = now - loaded;
-        long left = 20L * 1000L - past;
+        long left = modelTimeout * 1000L - past;
         try {
             LOG.info("Ожидаем возможные модальные окна {} мс...", left);
             Thread.sleep(left);
@@ -179,11 +180,10 @@ public class SectionParser {
     }
 
 
-    @Scheduled(initialDelay = 1200, fixedDelay = ONE_WEEK_MS)
+    @Scheduled(initialDelay = Constants.INITIAL_DELAY, fixedDelay = Constants.ONE_WEEK_MS)
     @Transactional
-    public void getAdditionalArticleInfo(){
+    public void getAdditionalItemInfo(){
         LOG.info("Получаем дополнитульную информацию о товарe...");
-        int page = 0;
 
         List<Category> categories;
         List<City> cities = cityRepository.findAll();
@@ -193,7 +193,7 @@ public class SectionParser {
             LOG.info("-------------------------------------");
             LOG.info("Получаем списки товаров для {}", city.getUrlSuffix());
             LOG.info("-------------------------------------");
-            page = 0;
+           int page = 0;
             while (!(categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize))).isEmpty()) {
                 LOG.info("Получили из базы {} категорий", categories.size());
                 for (Category category : categories) {
@@ -212,13 +212,6 @@ public class SectionParser {
 
     }
 
-//    private void modalSafeClick(WebElement element) {
-//
-//        while (!element.isDisplayed()) {
-//            checkForModalPanels();
-//        }
-//        element.click();
-//    }
 
     private void switchCity(City city) {
         openCitiesPopup();
