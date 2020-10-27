@@ -17,23 +17,19 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-
+import org.springframework.context.annotation.Scope;
+import org.springframework.stereotype.Component;
 
 public class ItemsUpdateTask implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ItemsUpdateTask.class);
-    @Autowired
-    private ApplicationProperties appProperties;
-    //TODO: export options to application.properties
-    private final ItemRepository itemRepository;
-    private final ItemPriceRepository itemPriceRepository;
+
+    private final ItemsUpdateTaskContext context;
     private final Category category;
     private final City city;
     private final WebDriver webDriver;
 
-    public ItemsUpdateTask(ItemRepository itemRepository, ItemPriceRepository itemPriceRepository, Category category, City city, WebDriver webDriver) {
-        this.itemRepository = itemRepository;
-        this.itemPriceRepository = itemPriceRepository;
+    public ItemsUpdateTask(ItemsUpdateTaskContext context, Category category, City city, WebDriver webDriver) {
+        this.context = context;
         this.category = category;
         this.city = city;
         this.webDriver = webDriver;
@@ -45,30 +41,43 @@ public class ItemsUpdateTask implements Runnable {
             LOG.warn("Начиначем обработку категории '{}'", category.getName());
             String categoryUrl;
             synchronized (webDriver) {
+                //TODO: take paging logic from fora/mechta etc.
                 String categorySuffix = URLUtil.getCategorySuffix(category.getUrl(), Constants.URL);
+                //TODO: take into account empty city suffix
+                //https://www.technodom.kz/noutbuki-i-komp-jutery/noutbuki-i-aksessuary/noutbuki
+                //https://www.technodom.kz/aktobe/noutbuki-i-komp-jutery/noutbuki-i-aksessuary/noutbuki
                 categoryUrl = String.format("%s/%s/%s", Constants.URL, city.getUrlSuffix(), categorySuffix);
                 webDriver.get(categoryUrl);
             }
 
             WebElement nextPageLink = null;
-            outer:
+            pager_loop:
             do {
                 if (nextPageLink != null) {
                     nextPageLink.click();
                 }
                 long start = System.currentTimeMillis();
+                //O
+                int attempts = 0;
+                // TODO: use webdriver wait object
+                //wait.until(ExpectedConditions.not(ExpectedConditions.presenceOfElementLocated(By.cssSelector(".CategoryProductList .ProductCard.ProductCard_isLoading"))));
                 while (!webDriver.findElements(By.cssSelector(".CategoryProductList .ProductCard.ProductCard_isLoading")).isEmpty()) {
-                    if (System.currentTimeMillis() - start >= appProperties.getTimeout()) {
+                    if (System.currentTimeMillis() - start >= context.getWebDriverProperties().getTimeout()) {
                         LOG.warn("Слишком долго получаем данные");
-                        int attempts = 0;
-                        //TODO: retry to get data / reload page
-                        if (attempts <= appProperties.getRetryCount()) {
-                            webDriver.get(categoryUrl);
+                        if (attempts <= context.getWebDriverProperties().getRetryCount()) {
+                            start = System.currentTimeMillis();
                             attempts++;
-                            break outer;
+                            //TODO: get current page
+                            webDriver.get(categoryUrl);
+                        }
+                        else {
+                            // go to next items page.
+                            break pager_loop;
                         }
                     }
-                    Thread.sleep(200);
+                    else {
+                        Thread.sleep(200);
+                    }
                 }
                 Document itemsPage = Jsoup.parse(webDriver.getPageSource());
                 parseItems(itemsPage);
@@ -115,6 +124,7 @@ public class ItemsUpdateTask implements Runnable {
             LOG.warn("Продукт без кода: {}\n{}", itemText, itemUrl);
             return;
         }
+        ItemRepository itemRepository = context.getItemRepository();
         Item item = itemRepository.findOneByExternalId(externalCode).orElseGet(() -> new Item(externalCode));
 
         item.setModel(itemText);
@@ -126,11 +136,15 @@ public class ItemsUpdateTask implements Runnable {
         itemRepository.save(item);
 
 
+
+        ItemPriceRepository itemPriceRepository = context.getItemPriceRepository();
         ItemPrice itemPrice = itemPriceRepository.findOneByItemAndCity(item, city).orElseGet(() -> {
             ItemPrice newItemPrice = new ItemPrice();
             newItemPrice.setItem(item);
             newItemPrice.setCity(city);
-            //TODO: item availability
+            //TODO: item availability (check)
+            boolean notAvailable = itemElement.selectFirst(".ProductCard-ProductActions").text().toLowerCase().contains("нет в наличии");
+            newItemPrice.setAvailable(!notAvailable);
 
             return newItemPrice;
         });

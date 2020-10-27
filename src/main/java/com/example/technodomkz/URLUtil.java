@@ -31,7 +31,7 @@ public final class URLUtil {
         int index1 = rawUrl.lastIndexOf("-");
         return rawUrl.substring(index1 + 1, rawUrl.length());
     }
-//TODO: almatu
+
     public static String extractCityFromUrl(String rawUri, String suffix) {
         // rawUri = "/aktobe/all"
         // suffix = "/all"

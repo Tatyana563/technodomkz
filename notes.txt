@@ -5,3 +5,5 @@
 
  3) almatu urlSuffix empty in table
  4) app properties =null
+
+ ".CategoryPagination .CategoryPagination-PaginationLink:last()"

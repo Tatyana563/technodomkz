@@ -16,6 +16,9 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.FluentWait;
+import org.openqa.selenium.support.ui.Wait;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,8 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import java.io.IOException;
-import java.net.URL;
+import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -43,14 +45,17 @@ public class SectionParser {
             "ТВ, аудио, видео");
 
 
+
+    @Autowired
+    private WebDriverProperties webDriverProperties;
     @Value("${parser.chrome.path}")
     private String path;
     @Value("${technodom.api.chunk-size}")
     private Integer chunkSize;
     @Value("${technodom.thread-pool.pool-size}")
     private Integer threadPoolSize;
-    @Value("${parser.model.window.timeout}")
-    private Integer modelTimeout;
+    @Value("${parser.modal-window.present.timeout-ms}")
+    private Integer modalWindowTimeout;
 //    @Value("${parser.initial.delay}")
 //    private final Integer initialDelay;
     @Autowired
@@ -65,6 +70,9 @@ public class SectionParser {
     private ItemPriceRepository itemPriceRepository;
     @Autowired
     private CityRepository cityRepository;
+
+    @Autowired
+    private ItemsUpdateTaskContext context;
 
     private WebDriver driver = null;
 
@@ -92,6 +100,18 @@ public class SectionParser {
     public void getSections() {
 
         driver.get(Constants.CATEGORIES_URL);
+        Wait<WebDriver> wait = new FluentWait<>(driver)
+                .withMessage("Categories not found")
+                .withTimeout(Duration.ofSeconds(10))
+                .pollingEvery(Duration.ofMillis(200));
+
+        try {
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("div.CatalogPage-CategorySection")));
+        }
+        catch (Exception e) {
+            LOG.error("Не удалось загрузить список категорий", e);
+            return;
+        }
         long loaded = System.currentTimeMillis();
         Document document = Jsoup.parse(driver.getPageSource());
         LOG.info("Получили главную страницу, ищем секции...");
@@ -161,7 +181,7 @@ public class SectionParser {
     private void checkForModalPanels(long loaded) {
         long now = System.currentTimeMillis();
         long past = now - loaded;
-        long left = modelTimeout * 1000L - past;
+        long left = modalWindowTimeout - past;
         try {
             LOG.info("Ожидаем возможные модальные окна {} мс...", left);
             Thread.sleep(left);
@@ -197,8 +217,7 @@ public class SectionParser {
             while (!(categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize))).isEmpty()) {
                 LOG.info("Получили из базы {} категорий", categories.size());
                 for (Category category : categories) {
-                    new ItemsUpdateTask(itemRepository,
-                            itemPriceRepository,
+                    new ItemsUpdateTask(context,
                             category,
                             city,
                             driver)
@@ -225,6 +244,7 @@ public class SectionParser {
     }
 
     private void openCitiesPopup() {
+        // TODO: wait for city button
         driver.findElement(By.cssSelector(".CitySelector__Button")).click();
         driver.findElement(By.cssSelector(".CitiesModal__More-Btn")).click();
     }
