@@ -147,6 +147,18 @@ public class SectionParser {
 
     private void parseCities(long loaded) {
         checkForModalPanels(loaded);
+        Wait<WebDriver> wait = new FluentWait<>(driver)
+                .withMessage(" City list not found")
+                .withTimeout(Duration.ofSeconds(10))
+                .pollingEvery(Duration.ofMillis(200));
+
+        try {
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(".ReactModal__Content.VerifyCityModal")));
+        }
+        catch (Exception e) {
+            LOG.error("Не удалось загрузить список городов", e);
+            return;
+        }
         try {
             WebElement citySelectModal = driver.findElement(By.cssSelector(".ReactModal__Content.VerifyCityModal"));
             if (citySelectModal.isDisplayed()) {
@@ -245,6 +257,19 @@ public class SectionParser {
 
     private void openCitiesPopup() {
         // TODO: wait for city button
+
+        Wait<WebDriver> wait = new FluentWait<>(driver)
+                .withMessage("City popup not found")
+                .withTimeout(Duration.ofSeconds(10))
+                .pollingEvery(Duration.ofMillis(200));
+
+        try {
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(".CitySelector__Button")));
+        }
+        catch (Exception e) {
+            LOG.error("Не удалось загрузить список категорий", e);
+            return;
+        }
         driver.findElement(By.cssSelector(".CitySelector__Button")).click();
         driver.findElement(By.cssSelector(".CitiesModal__More-Btn")).click();
     }

@@ -22,11 +22,11 @@ public class Test {
     }
 
     public static void main(String[] args) {
-        outer:
+       // outer:
         for (int i=0; i<100; i+=10) {
             for (int j=0; j<10; j++){
                 if (j!=0 && j % 2 == 0) {
-                    continue;
+                   continue;
                 }
                 System.out.println("i=" + i + " j=" + j);
                 System.out.println(i+j);
