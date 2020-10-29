@@ -35,7 +35,7 @@ public class ItemsUpdateTask implements Runnable {
     private final ItemsUpdateTaskContext context;
     private final Category category;
     private final City city;
-    private final WebDriver webDriver;
+    WebDriver webDriver;
 
     public ItemsUpdateTask(ItemsUpdateTaskContext context, Category category, City city, WebDriver webDriver) {
         this.context = context;
@@ -61,10 +61,9 @@ public class ItemsUpdateTask implements Runnable {
                 } else {
                     categoryUrl = String.format("%s/%s/%s", Constants.URL, city.getUrlSuffix(), categorySuffix);
                 }
-              pageUrlFormat = categoryUrl + PAGE_URL_FORMAT;
+                pageUrlFormat = categoryUrl + PAGE_URL_FORMAT;
                 String firstPageUrl = String.format(pageUrlFormat, 1);
                 webDriver.get(firstPageUrl);
-            }
                 Document itemsPage = Jsoup.parse(webDriver.getPageSource());
                 if (itemsPage != null) {
                     int totalPages = getTotalPages(itemsPage);
@@ -73,57 +72,45 @@ public class ItemsUpdateTask implements Runnable {
                         LOG.info("Получаем список товаров ({}) - страница {}", category.getName(), pageNumber);
                         String pageUrl = String.format(pageUrlFormat, pageNumber);
                         webDriver.get(pageUrl);
+                        long start = System.currentTimeMillis();
+                        int attempts = 0;
+
+                        while (!webDriver.findElements(By.cssSelector(".CategoryProductList .ProductCard.ProductCard_isLoading")).isEmpty()) {
+                            if (System.currentTimeMillis() - start >= context.getWebDriverProperties().getTimeout()) {
+                                LOG.warn("Слишком долго получаем данные");
+                                if (attempts <= context.getWebDriverProperties().getRetryCount()) {
+                                    start = System.currentTimeMillis();
+                                    attempts++;
+                                    //TODO: get current page
+                                    webDriver.get(categoryUrl);
+                                } else {
+                                    // go to next items page.
+                                    break;
+                                }
+                            } else {
+                                Thread.sleep(200);
+                            }
+                        }
                         Document itemsPages = Jsoup.parse(webDriver.getPageSource());
                         parseItems(itemsPages, webDriver);
                     }
-
                 }
-
-        }
-        finally {
-            LOG.warn("Обработка категории '{}' завершена", category.getName());
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
     }
 
 
+    //TODO: get current page
+    // TODO: use webdriver wait object
+    //TODO: get current page
 
-//
-//            WebElement nextPageLink = null;
-//            pager_loop:
-//            do {
-//                if (nextPageLink != null) {
-//                    nextPageLink.click();
-//                }
-//                long start = System.currentTimeMillis();
-//                //O
-//                int attempts = 0;
-//                // TODO: use webdriver wait object
-//                //wait.until(ExpectedConditions.not(ExpectedConditions.presenceOfElementLocated(By.cssSelector(".CategoryProductList .ProductCard.ProductCard_isLoading"))));
-//                while (!webDriver.findElements(By.cssSelector(".CategoryProductList .ProductCard.ProductCard_isLoading")).isEmpty()) {
-//                    if (System.currentTimeMillis() - start >= context.getWebDriverProperties().getTimeout()) {
-//                        LOG.warn("Слишком долго получаем данные");
-//                        if (attempts <= context.getWebDriverProperties().getRetryCount()) {
-//                            start = System.currentTimeMillis();
-//                            attempts++;
-//                            //TODO: get current page
-//                            webDriver.get(categoryUrl);
-//                        } else {
-//                            // go to next items page.
-//                            break pager_loop;
-//                        }
-//                    } else {
-//                        Thread.sleep(200);
-//                    }
-//                }
-//                Document itemsPage = Jsoup.parse(webDriver.getPageSource());
-//                parseItems(itemsPage);
-//            } while ((nextPageLink = webDriver.findElement(By.cssSelector(".CategoryPagination-ListItem .CategoryPagination-Arrow_direction_next"))).isDisplayed());
-//        } catch (NoSuchElementException | InterruptedException noSuchElementException) {
-//            // nothing to do.
-//        } finally {
-//            LOG.warn("Обработка категории '{}' завершена", category.getName());
-//        }
-//    }
+
+// TODO: use webdriver wait object
+
+//TODO: get current page
+
 
     private void parseItems(Document itemsPage, WebDriver driver) {
         if (!isValidCity(itemsPage, driver)) {
@@ -136,7 +123,7 @@ public class ItemsUpdateTask implements Runnable {
 
         for (Element itemElement : itemElements) {
             try {
-                parseSingleItem(itemElement);
+                parseSingleItem(itemElement, driver);
             } catch (Exception e) {
                 LOG.error("Не удалось распарсить продукт", e);
             }
@@ -156,11 +143,23 @@ public class ItemsUpdateTask implements Runnable {
             LOG.error("Не удалось загрузить список категорий", e);
         }
 
-            return city.getName().equalsIgnoreCase(page.selectFirst("p.CitySelector__Title").text());
+        return city.getName().equalsIgnoreCase(page.selectFirst("p.CitySelector__Title").text());
 
     }
 
-    private void parseSingleItem(Element itemElement) {
+    private void parseSingleItem(Element itemElement, WebDriver driver) {
+        Wait<WebDriver> wait = new FluentWait<>(driver)
+                .withMessage("Item card not found")
+                .withTimeout(Duration.ofSeconds(10))
+                .pollingEvery(Duration.ofMillis(200));
+
+        try {
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(".ProductCard-Content")));
+        } catch (Exception e) {
+            LOG.error("Не удалось загрузитьдетали товара", e);
+            return;
+        }
+
         String itemPhoto = itemElement.selectFirst(".ProductCard-Image img").absUrl("src");
         String itemUrl = itemElement.selectFirst(".ProductCard-Content").attr("href");
         String itemText = itemElement.selectFirst("h4").text();

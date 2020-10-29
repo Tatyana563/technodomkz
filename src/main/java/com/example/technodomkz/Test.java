@@ -22,16 +22,16 @@ public class Test {
     }
 
     public static void main(String[] args) {
-       // outer:
+
         for (int i=0; i<100; i+=10) {
             for (int j=0; j<10; j++){
                 if (j!=0 && j % 2 == 0) {
-                   continue;
+             break;
                 }
                 System.out.println("i=" + i + " j=" + j);
                 System.out.println(i+j);
             }
-            //sadfsdf
+            System.out.println("hi");
         }
     }
 }
