@@ -15,11 +15,15 @@ import org.openqa.selenium.By;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.FluentWait;
+import org.openqa.selenium.support.ui.Wait;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,7 +31,7 @@ public class ItemsUpdateTask implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ItemsUpdateTask.class);
     private static final Pattern QUANTITY_PATTERN = Pattern.compile("(\\d+)");
     private static final Integer NUMBER_OF_PRODUCTS_PER_PAGE = 24;
-    private static final String PAGE_URL_FORMAT = "page=%d";
+    private static final String PAGE_URL_FORMAT = "?page=%d";
     private final ItemsUpdateTaskContext context;
     private final Category category;
     private final City city;
@@ -64,13 +68,13 @@ public class ItemsUpdateTask implements Runnable {
                 Document itemsPage = Jsoup.parse(webDriver.getPageSource());
                 if (itemsPage != null) {
                     int totalPages = getTotalPages(itemsPage);
-                    parseItems(itemsPage);
+                    parseItems(itemsPage, webDriver);
                     for (int pageNumber = 2; pageNumber <= totalPages; pageNumber++) {
                         LOG.info("Получаем список товаров ({}) - страница {}", category.getName(), pageNumber);
                         String pageUrl = String.format(pageUrlFormat, pageNumber);
                         webDriver.get(pageUrl);
                         Document itemsPages = Jsoup.parse(webDriver.getPageSource());
-                        parseItems(itemsPages);
+                        parseItems(itemsPages, webDriver);
                     }
 
                 }
@@ -121,8 +125,8 @@ public class ItemsUpdateTask implements Runnable {
 //        }
 //    }
 
-    private void parseItems(Document itemsPage) {
-        if (!isValidCity(itemsPage)) {
+    private void parseItems(Document itemsPage, WebDriver driver) {
+        if (!isValidCity(itemsPage, driver)) {
             String text = itemsPage.selectFirst("p.CitySelector__Title").text();
             LOG.error("Используется другой город {}", text);
             return;
@@ -140,8 +144,20 @@ public class ItemsUpdateTask implements Runnable {
         }
     }
 
-    private boolean isValidCity(Document page) {
-        return city.getName().equalsIgnoreCase(page.selectFirst("p.CitySelector__Title").text());
+    private boolean isValidCity(Document page, WebDriver driver) {
+        Wait<WebDriver> wait = new FluentWait<>(driver)
+                .withMessage("City button not found")
+                .withTimeout(Duration.ofSeconds(10))
+                .pollingEvery(Duration.ofMillis(200));
+
+        try {
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(".CitySelector__Button")));
+        } catch (Exception e) {
+            LOG.error("Не удалось загрузить список категорий", e);
+        }
+
+            return city.getName().equalsIgnoreCase(page.selectFirst("p.CitySelector__Title").text());
+
     }
 
     private void parseSingleItem(Element itemElement) {
