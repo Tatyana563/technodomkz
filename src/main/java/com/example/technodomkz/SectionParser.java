@@ -213,7 +213,6 @@ public class SectionParser {
 
 
     @Scheduled(initialDelay = Constants.INITIAL_DELAY, fixedDelay = Constants.ONE_WEEK_MS)
-    @Transactional
     public void getAdditionalItemInfo(){
         LOG.info("Получаем дополнитульную информацию о товарe...");
 
@@ -221,7 +220,7 @@ public class SectionParser {
         List<City> cities = cityRepository.findAll();
         for (int i = 0; i < cities.size(); i++) {
             City city = cities.get(i);
-            switchCity(city);
+//            switchCity(city);
             LOG.info("-------------------------------------");
             LOG.info("Получаем списки товаров для {}", city.getUrlSuffix());
             LOG.info("-------------------------------------");
@@ -229,12 +228,12 @@ public class SectionParser {
             while (!(categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize))).isEmpty()) {
                 LOG.info("Получили из базы {} категорий", categories.size());
                 for (Category category : categories) {
+                    //TODO: rollback multithreading execution (fixedThreadPoolExecutor/CountDownLatch)
                     new ItemsUpdateTask(context,
                             category,
                             city,
                             driver)
                             .run();
-
                 }
                 LOG.info("Задачи выполнены, следующая порция...");
 
@@ -256,8 +255,6 @@ public class SectionParser {
     }
 
     private void openCitiesPopup() {
-        // TODO: wait for city button
-
         Wait<WebDriver> wait = new FluentWait<>(driver)
                 .withMessage("City popup not found")
                 .withTimeout(Duration.ofSeconds(10))

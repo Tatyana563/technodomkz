@@ -13,6 +13,7 @@ public final class URLUtil {
         // Only static methods
     }
 
+    //TODO: implement
     public static String removeCityFromUrl(String rawUrl, String prefix) {
         String str = "https://www.technodom.kz/kazygurt/vsjo-dlja-gejmerov/xbox/aksessuary-xbox";
         List<String> result = new ArrayList<>();
@@ -29,7 +30,7 @@ public final class URLUtil {
     public static String extractExternalIdFromUrl(String rawUrl) {
         //  String line=  "https://www.technodom.kz/tv-audio-foto-video/televizory/led-televizory/p/samsung-43-ue43t5300auxce-led-fhd-smart-black-216516";
         int index1 = rawUrl.lastIndexOf("-");
-        return rawUrl.substring(index1 + 1, rawUrl.length());
+        return rawUrl.substring(index1 + 1);
     }
 
     public static String extractCityFromUrl(String rawUri, String suffix) {
