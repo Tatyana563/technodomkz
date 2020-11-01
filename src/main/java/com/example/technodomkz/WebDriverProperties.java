@@ -11,6 +11,14 @@ public class WebDriverProperties {
     private long timeout;
     @Value("${parser.retry.count:3}")
     private int retryCount;
+    @Value("${parser.chrome.path}")
+    private String path;
+    @Value("${technodom.api.chunk-size}")
+    private Integer chunkSize;
+    @Value("${technodom.thread-pool.pool-size}")
+    private Integer threadPoolSize;
+    @Value("${parser.modal-window.present.timeout-ms}")
+    private Integer modalWindowTimeout;
 
     public long getTimeout() {
         return timeout;
@@ -18,5 +26,21 @@ public class WebDriverProperties {
 
     public int getRetryCount() {
         return retryCount;
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public Integer getChunkSize() {
+        return chunkSize;
+    }
+
+    public Integer getThreadPoolSize() {
+        return threadPoolSize;
+    }
+
+    public Integer getModalWindowTimeout() {
+        return modalWindowTimeout;
     }
 }

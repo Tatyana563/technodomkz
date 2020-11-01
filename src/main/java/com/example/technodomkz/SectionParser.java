@@ -47,20 +47,8 @@ public class SectionParser {
             "Фототехника и квадрокоптеры", "Бытовая техника", "Техника для кухни",
             "ТВ, аудио, видео");
 
-
-
     @Autowired
     private WebDriverProperties webDriverProperties;
-    @Value("${parser.chrome.path}")
-    private String path;
-    @Value("${technodom.api.chunk-size}")
-    private Integer chunkSize;
-    @Value("${technodom.thread-pool.pool-size}")
-    private Integer threadPoolSize;
-    @Value("${parser.modal-window.present.timeout-ms}")
-    private Integer modalWindowTimeout;
-//    @Value("${parser.initial.delay}")
-//    private final Integer initialDelay;
     @Autowired
     private SectionRepository sectionRepository;
     @Autowired
@@ -83,7 +71,7 @@ public class SectionParser {
     public void init() {
         WebDriverManager.chromedriver().setup();
         ChromeOptions options = new ChromeOptions();
-        options.setBinary(path);
+        options.setBinary(webDriverProperties.getPath());
 //       options.addArguments("--headless");
         options.addArguments("window-size=1920x1080");
         driver = new ChromeDriver(options);
@@ -110,8 +98,7 @@ public class SectionParser {
 
         try {
             wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("div.CatalogPage-CategorySection")));
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.error("Не удалось загрузить список категорий", e);
             return;
         }
@@ -157,8 +144,7 @@ public class SectionParser {
 
         try {
             wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(".ReactModal__Content.VerifyCityModal")));
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.error("Не удалось загрузить список городов", e);
             return;
         }
@@ -183,7 +169,8 @@ public class SectionParser {
         Elements cityUrls = pageWithCitiesModal.select("a.CitiesModal__List-Item");
         for (Element cityUrl : cityUrls) {
             LOG.info("Город: {}", cityUrl.text());
-            String cityLink = URLUtil.extractCityFromUrl(cityUrl.attr("href"), Constants.ALL_SUFFIX);;
+            String cityLink = URLUtil.extractCityFromUrl(cityUrl.attr("href"), Constants.ALL_SUFFIX);
+            ;
             String cityText = cityUrl.text();
             if (!cityRepository.existsByUrlSuffix(cityLink)) {
                 cityRepository.save(new City(cityText, cityLink));
@@ -196,7 +183,7 @@ public class SectionParser {
     private void checkForModalPanels(long loaded) {
         long now = System.currentTimeMillis();
         long past = now - loaded;
-        long left = modalWindowTimeout - past;
+        long left = webDriverProperties.getModalWindowTimeout() - past;
         try {
             LOG.info("Ожидаем возможные модальные окна {} мс...", left);
             Thread.sleep(left);
@@ -217,7 +204,7 @@ public class SectionParser {
 
     @Scheduled(initialDelay = Constants.INITIAL_DELAY, fixedDelay = Constants.ONE_WEEK_MS)
     public void getAdditionalItemInfo() throws InterruptedException {
-        ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
+        ExecutorService executorService = Executors.newFixedThreadPool(webDriverProperties.getThreadPoolSize());
         LOG.info("Получаем дополнитульную информацию о товарe...");
 
         List<Category> categories;
@@ -228,8 +215,8 @@ public class SectionParser {
             LOG.info("-------------------------------------");
             LOG.info("Получаем списки товаров для {}", city.getUrlSuffix());
             LOG.info("-------------------------------------");
-           int page = 0;
-            while (!(categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize))).isEmpty()) {
+            int page = 0;
+            while (!(categories = categoryRepository.getChunk(PageRequest.of(page++, webDriverProperties.getChunkSize()))).isEmpty()) {
                 CountDownLatch latch = new CountDownLatch(categories.size());
                 LOG.info("Получили из базы {} категорий", categories.size());
                 for (Category category : categories) {
@@ -254,7 +241,7 @@ public class SectionParser {
         openCitiesPopup();
         List<WebElement> cityLinks = driver.findElements(By.cssSelector("a.CitiesModal__List-Item"));
         for (WebElement cityLink : cityLinks) {
-            if(city.getName().equalsIgnoreCase(cityLink.getText())) {
+            if (city.getName().equalsIgnoreCase(cityLink.getText())) {
                 cityLink.click();
                 break;
             }
@@ -269,8 +256,7 @@ public class SectionParser {
 
         try {
             wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(".CitySelector__Button")));
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.error("Не удалось загрузить список категорий", e);
             return;
         }
