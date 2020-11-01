@@ -33,6 +33,9 @@ import javax.annotation.PreDestroy;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -213,7 +216,8 @@ public class SectionParser {
 
 
     @Scheduled(initialDelay = Constants.INITIAL_DELAY, fixedDelay = Constants.ONE_WEEK_MS)
-    public void getAdditionalItemInfo(){
+    public void getAdditionalItemInfo() throws InterruptedException {
+        ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
         LOG.info("Получаем дополнитульную информацию о товарe...");
 
         List<Category> categories;
@@ -226,19 +230,22 @@ public class SectionParser {
             LOG.info("-------------------------------------");
            int page = 0;
             while (!(categories = categoryRepository.getChunk(PageRequest.of(page++, chunkSize))).isEmpty()) {
+                CountDownLatch latch = new CountDownLatch(categories.size());
                 LOG.info("Получили из базы {} категорий", categories.size());
                 for (Category category : categories) {
                     //TODO: rollback multithreading execution (fixedThreadPoolExecutor/CountDownLatch)
-                    new ItemsUpdateTask(context,
+                    executorService.execute(new ItemsUpdateTask(context,
                             category,
                             city,
-                            driver)
-                            .run();
+                            driver,
+                            latch));
                 }
+                latch.await();
                 LOG.info("Задачи выполнены, следующая порция...");
 
             }
         }
+        executorService.shutdown();
 
     }
 

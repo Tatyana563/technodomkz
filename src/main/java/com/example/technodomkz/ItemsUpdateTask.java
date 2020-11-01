@@ -21,8 +21,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.io.IOException;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,12 +35,14 @@ public class ItemsUpdateTask implements Runnable {
     private final Category category;
     private final City city;
     private final WebDriver webDriver;
+    private final CountDownLatch latch;
 
-    public ItemsUpdateTask(ItemsUpdateTaskContext context, Category category, City city, WebDriver webDriver) {
+    public ItemsUpdateTask(ItemsUpdateTaskContext context, Category category, City city, WebDriver webDriver,/*, CountDownLatch latch*/CountDownLatch latch) {
         this.context = context;
         this.category = category;
         this.city = city;
         this.webDriver = webDriver;
+        this.latch = latch;
     }
 
     @Override
@@ -93,14 +95,14 @@ public class ItemsUpdateTask implements Runnable {
                     }
                     parseItems(itemsPages);
                 }
-            }
-            else {
+            } else {
                 LOG.error("Не удалось получить первую страницу категории");
             }
         } catch (Exception exception) {
             LOG.error("Не получилось распарсить категорию", exception);
         } finally {
             LOG.warn("Обработка категории '{}' завершена", category.getName());
+            latch.countDown();
         }
     }
 
@@ -162,7 +164,7 @@ public class ItemsUpdateTask implements Runnable {
 
         LOG.info("Продукт: {} {}", itemText, itemPriceValue);
         //TODO: use itemUrl instead of externalCode (id)
-        String externalCode = URLUtil.extractExternalIdFromUrl(itemUrl);
+        String externalCode = itemUrl;
         if (externalCode == null || externalCode.isEmpty()) {
             LOG.warn("Продукт без кода: {}\n{}", itemText, itemUrl);
             return;
@@ -177,7 +179,6 @@ public class ItemsUpdateTask implements Runnable {
 
             item.setModel(itemText);
             item.setImage(itemPhoto);
-
             String itemUrlWithoutCity = URLUtil.removeCityFromUrl(itemUrl, Constants.URL);
             item.setUrl(itemUrlWithoutCity);
             item.setCategory(category);
